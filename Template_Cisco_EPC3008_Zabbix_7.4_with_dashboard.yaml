@@ -1,0 +1,1170 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+  - uuid: b7beed161b7944f094c578495d40e5be
+    name: Templates/Network devices
+  templates:
+  - uuid: e29d1b73ebf9404aab57d875ed9a1bcf
+    template: Template Cisco EPC3008 DOCSIS
+    name: Cisco EPC3008 DOCSIS
+    description: Monitoring Cisco EPC3008 cable modem using HTTP Agent and HTML parsing.
+    groups:
+    - name: Templates/Network devices
+    macros:
+    - macro: '{$EPC3008.URL}'
+      value: http://192.168.100.1/Docsis_system.asp
+      description: Modem status page URL
+    - macro: '{$EPC3008.DS.SNR.WARN}'
+      value: '33'
+      description: Cisco guidance for 256-QAM below -8 dBmV requires SNR above 33 dB.
+    - macro: '{$EPC3008.DS.SNR.CRIT}'
+      value: '30'
+      description: Cisco guidance cites SNR above 30 dB for 256-QAM at downstream power above -8 dBmV.
+    - macro: '{$EPC3008.DS.POWER.MIN}'
+      value: '-10'
+      description: Recommended downstream power lower limit, dBmV. NETGEAR signal guidance.
+    - macro: '{$EPC3008.DS.POWER.MAX}'
+      value: '10'
+      description: Recommended downstream power upper limit, dBmV. NETGEAR signal guidance.
+    - macro: '{$EPC3008.US.POWER.MAX}'
+      value: '48'
+      description: Recommended upstream transmit power upper limit, dBmV. NETGEAR signal guidance.
+    - macro: '{$EPC3008.DS.POWER.CRIT.MIN}'
+      value: '-15'
+      description: Cisco cited DOCSIS downstream lower operating boundary, dBmV.
+    - macro: '{$EPC3008.DS.POWER.CRIT.MAX}'
+      value: '15'
+      description: Cisco cited DOCSIS downstream upper operating boundary, dBmV.
+    - macro: '{$EPC3008.DS.POWER.SNR.LOW}'
+      value: '-8'
+      description: 'Cisco 256-QAM SNR boundary: below this power, SNR should exceed 33 dB.'
+    - macro: '{$EPC3008.US.POWER.MIN}'
+      value: '38'
+      description: Recommended upstream transmit power lower limit, dBmV. NETGEAR signal guidance.
+    items:
+    - uuid: 2875d5fea6524480b4f043c362b58873
+      name: 'Cisco EPC3008: Download HTML'
+      type: HTTP_AGENT
+      key: cisco.epc3008.html
+      delay: 1m
+      history: 1d
+      value_type: TEXT
+      url: '{$EPC3008.URL}'
+      request_method: GET
+      retrieve_mode: BODY
+      output_format: RAW
+      status_codes: '200'
+      timeout: 10s
+      tags:
+      - tag: component
+        value: raw
+      preprocessing:
+      - type: JAVASCRIPT
+        parameters:
+        - "function clean(s) {\n    return s\n        .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n        .replace(/<[^>]*>/g,\
+          \ ' ')\n        .replace(/&nbsp;/gi, ' ')\n        .replace(/&amp;/gi, '&')\n        .replace(/\\s+/g, ' ')\n  \
+          \      .trim();\n}\n\nfunction cell(header) {\n    var re = new RegExp(\n        '<td[^>]*headers=[\"\\\\x27]' +\
+          \ header +\n        '[\"\\\\x27][^>]*>([\\\\s\\\\S]*?)</td>',\n        'i'\n    );\n    var m = value.match(re);\n\
+          \    return m ? clean(m[1]) : '';\n}\n\nfunction row(id) {\n    return cell(id);\n}\n\nfunction status(id) {\n \
+          \   var re = new RegExp(\n        '<td[^>]*headers=[\"\\\\x27]' + id +\n        '[\"\\\\x27][^>]*>([\\\\s\\\\S]*?)</td>',\n\
+          \        'i'\n    );\n    var m = value.match(re);\n    if (!m) return 0;\n    if (/msg_st_completed/i.test(m[1]))\
+          \ return 1;\n    if (/msg_st_progress/i.test(m[1])) return 0;\n    return completed(clean(m[1]));\n}\n\nfunction\
+          \ number(s) {\n    var m = s.match(/-?\\d+(?:\\.\\d+)?/);\n    return m ? parseFloat(m[0]) : null;\n}\n\nfunction\
+          \ completed(s) {\n    return /completed|enabled/i.test(s) ? 1 : 0;\n}\n\nvar result = {};\n\nresult.model = row('Model');\n\
+          result.hardware = row('HardwareRevision');\nresult.mac = row('MACAddress');\nresult.firmware = row('CurrentSoftwareRevision');\n\
+          \nresult.downstream_scanning = status('DOCSISDownstreamScanning');\nresult.upstream_ranging = status('DOCSISRanging');\n\
+          result.dhcp = status('DOCSISDHCP');\nresult.tftp = status('DOCSISTFTP');\nresult.registration = status('DOCSISDataRegComplete');\n\
+          result.privacy = status('DOCSISPrivacy');\n\n// The firmware emits status text through JavaScript tokens;\n// the\
+          \ DOCSIS registration state is the reliable operational signal.\nresult.operational = result.registration;\n\nfor\
+          \ (var i = 1; i <= 8; i++) {\n    result['ds_' + i + '_power'] =\n        number(cell('channel_' + i + ' ch_pwr'));\n\
+          \n    result['ds_' + i + '_snr'] =\n        number(cell('channel_' + i + ' ch_snr'));\n}\n\nfor (var j = 1; j <=\
+          \ 4; j++) {\n    result['us_' + j + '_power'] =\n        number(cell('up_channel_' + j + ' up_pwr'));\n}\n\nreturn\
+          \ JSON.stringify(result);\n"
+    - uuid: bb25ec2b5ef442f6a3b6824122296dac
+      name: 'Cisco EPC3008: Operational status'
+      type: DEPENDENT
+      key: cisco.epc3008.operational
+      value_type: UNSIGNED
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.operational
+    - uuid: 54785e691d344c969894a27615f5db1a
+      name: 'Cisco EPC3008: DOCSIS downstream scanning'
+      type: DEPENDENT
+      key: cisco.epc3008.docsis.downstream
+      value_type: UNSIGNED
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.downstream_scanning
+    - uuid: 9a88ea659ae64f4eada96bb92757b0c2
+      name: 'Cisco EPC3008: DOCSIS upstream ranging'
+      type: DEPENDENT
+      key: cisco.epc3008.docsis.ranging
+      value_type: UNSIGNED
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.upstream_ranging
+    - uuid: 70b07d163fcf4a218ba24536b69a2148
+      name: 'Cisco EPC3008: DOCSIS DHCP'
+      type: DEPENDENT
+      key: cisco.epc3008.docsis.dhcp
+      value_type: UNSIGNED
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.dhcp
+    - uuid: 343a39e9f06045fb9b753a88680bb010
+      name: 'Cisco EPC3008: DOCSIS TFTP'
+      type: DEPENDENT
+      key: cisco.epc3008.docsis.tftp
+      value_type: UNSIGNED
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.tftp
+    - uuid: 638b09fc3bd6442a891d1d0c69a63b44
+      name: 'Cisco EPC3008: DOCSIS registration'
+      type: DEPENDENT
+      key: cisco.epc3008.docsis.registration
+      value_type: UNSIGNED
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.registration
+    - uuid: a8f5731bc2d64112a1563b4f3cf454d3
+      name: 'Downstream channel 1: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.ds1.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_1_power
+      triggers:
+      - uuid: 145d739cca974afba32b59172e5ee1f3
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds1.power,5m)<{$EPC3008.DS.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds1.power,5m)>{$EPC3008.DS.POWER.MAX}
+        name: 'Cisco EPC3008: Downstream channel 1 power outside warning range'
+        priority: WARNING
+        description: 'Zabbix warning threshold: downstream power outside -10 to +10 dBmV. Preferred target is -7 to +7 dBmV;
+          Cisco/DOCSIS operating range is -15 to +15 dBmV. Cisco RF reference: https://www.cisco.com/c/en/us/support/docs/broadband-cable/radio-frequency-rf-hybrid-fiber-coaxial-hfc/7137-rf.html'
+        tags:
+        - tag: component
+          value: signal
+      - uuid: c26f71724fca4510be63718ce8a937e5
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds1.power,5m)<{$EPC3008.DS.POWER.CRIT.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds1.power,5m)>{$EPC3008.DS.POWER.CRIT.MAX}
+        name: 'Cisco EPC3008: Downstream channel 1 power outside DOCSIS range'
+        priority: HIGH
+        description: Downstream input power outside -15 to +15 dBmV per Cisco RF guidance https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: f2874bbdc74b4d86be75b9d79d7b7cdf
+      name: 'Downstream channel 1: SNR'
+      type: DEPENDENT
+      key: cisco.epc3008.ds1.snr
+      value_type: FLOAT
+      units: dB
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_1_snr
+      triggers:
+      - uuid: 72f6da8d1be548338f445d5079e23123
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds1.snr,5m)<={$EPC3008.DS.SNR.CRIT} or (min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds1.power,5m)<={$EPC3008.DS.POWER.SNR.LOW} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds1.snr,5m)<={$EPC3008.DS.SNR.WARN})
+        name: 'Cisco EPC3008: Downstream channel 1 SNR critically low'
+        priority: HIGH
+        description: For 256-QAM Cisco guidance requires SNR >30 dB above -8 dBmV and >33 dB from -15 to -8 dBmV https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+      - uuid: 925c3b176cf340a0a62da6f8eb82b5ed
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds1.snr,5m)<={$EPC3008.DS.SNR.WARN} and min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds1.snr,5m)>{$EPC3008.DS.SNR.CRIT} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds1.power,5m)>{$EPC3008.DS.POWER.SNR.LOW}
+        name: 'Cisco EPC3008: Downstream channel 1 SNR low'
+        priority: WARNING
+        description: SNR below 33 dB warning level. Cisco cites >30 dB as the 256-QAM minimum above -8 dBmV and recommends
+          additional margin https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: 18a0e5d7711c44439f35c8e13760cef1
+      name: 'Downstream channel 2: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.ds2.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_2_power
+      triggers:
+      - uuid: fab5774ef8594c82a1166120b7b0e2cd
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds2.power,5m)<{$EPC3008.DS.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds2.power,5m)>{$EPC3008.DS.POWER.MAX}
+        name: 'Cisco EPC3008: Downstream channel 2 power outside warning range'
+        priority: WARNING
+        description: 'Zabbix warning threshold: downstream power outside -10 to +10 dBmV. Preferred target is -7 to +7 dBmV;
+          Cisco/DOCSIS operating range is -15 to +15 dBmV. Cisco RF reference: https://www.cisco.com/c/en/us/support/docs/broadband-cable/radio-frequency-rf-hybrid-fiber-coaxial-hfc/7137-rf.html'
+        tags:
+        - tag: component
+          value: signal
+      - uuid: af16c148294547979f2b45362878e783
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds2.power,5m)<{$EPC3008.DS.POWER.CRIT.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds2.power,5m)>{$EPC3008.DS.POWER.CRIT.MAX}
+        name: 'Cisco EPC3008: Downstream channel 2 power outside DOCSIS range'
+        priority: HIGH
+        description: Downstream input power outside -15 to +15 dBmV per Cisco RF guidance https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: e9a2d787cd5c4b39b7e9b112c73f1383
+      name: 'Downstream channel 2: SNR'
+      type: DEPENDENT
+      key: cisco.epc3008.ds2.snr
+      value_type: FLOAT
+      units: dB
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_2_snr
+      triggers:
+      - uuid: 944ad4c25ccc416aa121b6f603ea3b58
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds2.snr,5m)<={$EPC3008.DS.SNR.CRIT} or (min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds2.power,5m)<={$EPC3008.DS.POWER.SNR.LOW} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds2.snr,5m)<={$EPC3008.DS.SNR.WARN})
+        name: 'Cisco EPC3008: Downstream channel 2 SNR critically low'
+        priority: HIGH
+        description: For 256-QAM Cisco guidance requires SNR >30 dB above -8 dBmV and >33 dB from -15 to -8 dBmV https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+      - uuid: 380680ebf39340f79646f39c4a1f33f1
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds2.snr,5m)<={$EPC3008.DS.SNR.WARN} and min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds2.snr,5m)>{$EPC3008.DS.SNR.CRIT} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds2.power,5m)>{$EPC3008.DS.POWER.SNR.LOW}
+        name: 'Cisco EPC3008: Downstream channel 2 SNR low'
+        priority: WARNING
+        description: SNR below 33 dB warning level. Cisco cites >30 dB as the 256-QAM minimum above -8 dBmV and recommends
+          additional margin https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: d0706bc8ae5e4f868a4d0cf72efe3d5c
+      name: 'Downstream channel 3: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.ds3.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_3_power
+      triggers:
+      - uuid: 184b39f131b44ba98dde13488788e359
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds3.power,5m)<{$EPC3008.DS.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds3.power,5m)>{$EPC3008.DS.POWER.MAX}
+        name: 'Cisco EPC3008: Downstream channel 3 power outside warning range'
+        priority: WARNING
+        description: 'Zabbix warning threshold: downstream power outside -10 to +10 dBmV. Preferred target is -7 to +7 dBmV;
+          Cisco/DOCSIS operating range is -15 to +15 dBmV. Cisco RF reference: https://www.cisco.com/c/en/us/support/docs/broadband-cable/radio-frequency-rf-hybrid-fiber-coaxial-hfc/7137-rf.html'
+        tags:
+        - tag: component
+          value: signal
+      - uuid: cc3a50597dda4d899e58115550cb8f68
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds3.power,5m)<{$EPC3008.DS.POWER.CRIT.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds3.power,5m)>{$EPC3008.DS.POWER.CRIT.MAX}
+        name: 'Cisco EPC3008: Downstream channel 3 power outside DOCSIS range'
+        priority: HIGH
+        description: Downstream input power outside -15 to +15 dBmV per Cisco RF guidance https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: fdd4e42b2136435e9f738f6ae2704706
+      name: 'Downstream channel 3: SNR'
+      type: DEPENDENT
+      key: cisco.epc3008.ds3.snr
+      value_type: FLOAT
+      units: dB
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_3_snr
+      triggers:
+      - uuid: 70b1e3a92fc541cdb5ac95dee5f50284
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds3.snr,5m)<={$EPC3008.DS.SNR.CRIT} or (min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds3.power,5m)<={$EPC3008.DS.POWER.SNR.LOW} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds3.snr,5m)<={$EPC3008.DS.SNR.WARN})
+        name: 'Cisco EPC3008: Downstream channel 3 SNR critically low'
+        priority: HIGH
+        description: For 256-QAM Cisco guidance requires SNR >30 dB above -8 dBmV and >33 dB from -15 to -8 dBmV https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+      - uuid: 70193e72929d49a785694860ea924639
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds3.snr,5m)<={$EPC3008.DS.SNR.WARN} and min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds3.snr,5m)>{$EPC3008.DS.SNR.CRIT} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds3.power,5m)>{$EPC3008.DS.POWER.SNR.LOW}
+        name: 'Cisco EPC3008: Downstream channel 3 SNR low'
+        priority: WARNING
+        description: SNR below 33 dB warning level. Cisco cites >30 dB as the 256-QAM minimum above -8 dBmV and recommends
+          additional margin https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: 1628092118444385a2e62c9d81235dd5
+      name: 'Downstream channel 4: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.ds4.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_4_power
+      triggers:
+      - uuid: 9319e3f1a8864d209817bd5327c4e3b0
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds4.power,5m)<{$EPC3008.DS.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds4.power,5m)>{$EPC3008.DS.POWER.MAX}
+        name: 'Cisco EPC3008: Downstream channel 4 power outside warning range'
+        priority: WARNING
+        description: 'Zabbix warning threshold: downstream power outside -10 to +10 dBmV. Preferred target is -7 to +7 dBmV;
+          Cisco/DOCSIS operating range is -15 to +15 dBmV. Cisco RF reference: https://www.cisco.com/c/en/us/support/docs/broadband-cable/radio-frequency-rf-hybrid-fiber-coaxial-hfc/7137-rf.html'
+        tags:
+        - tag: component
+          value: signal
+      - uuid: 46d40e778eeb4751b903c117561acfaf
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds4.power,5m)<{$EPC3008.DS.POWER.CRIT.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds4.power,5m)>{$EPC3008.DS.POWER.CRIT.MAX}
+        name: 'Cisco EPC3008: Downstream channel 4 power outside DOCSIS range'
+        priority: HIGH
+        description: Downstream input power outside -15 to +15 dBmV per Cisco RF guidance https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: 564a846088dc4f9eae3eeff2ad634fb2
+      name: 'Downstream channel 4: SNR'
+      type: DEPENDENT
+      key: cisco.epc3008.ds4.snr
+      value_type: FLOAT
+      units: dB
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_4_snr
+      triggers:
+      - uuid: adf0c49b7df644978439ac65c4189632
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds4.snr,5m)<={$EPC3008.DS.SNR.CRIT} or (min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds4.power,5m)<={$EPC3008.DS.POWER.SNR.LOW} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds4.snr,5m)<={$EPC3008.DS.SNR.WARN})
+        name: 'Cisco EPC3008: Downstream channel 4 SNR critically low'
+        priority: HIGH
+        description: For 256-QAM Cisco guidance requires SNR >30 dB above -8 dBmV and >33 dB from -15 to -8 dBmV https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+      - uuid: 238c9bda961140ad9ed1e8eb35ce9053
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds4.snr,5m)<={$EPC3008.DS.SNR.WARN} and min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds4.snr,5m)>{$EPC3008.DS.SNR.CRIT} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds4.power,5m)>{$EPC3008.DS.POWER.SNR.LOW}
+        name: 'Cisco EPC3008: Downstream channel 4 SNR low'
+        priority: WARNING
+        description: SNR below 33 dB warning level. Cisco cites >30 dB as the 256-QAM minimum above -8 dBmV and recommends
+          additional margin https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: c8b181612b834fd1bd4c81dbeaa38f8e
+      name: 'Downstream channel 5: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.ds5.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_5_power
+      triggers:
+      - uuid: 24cfca2d111b48bdbb5bfdd9115e41ce
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds5.power,5m)<{$EPC3008.DS.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds5.power,5m)>{$EPC3008.DS.POWER.MAX}
+        name: 'Cisco EPC3008: Downstream channel 5 power outside warning range'
+        priority: WARNING
+        description: 'Zabbix warning threshold: downstream power outside -10 to +10 dBmV. Preferred target is -7 to +7 dBmV;
+          Cisco/DOCSIS operating range is -15 to +15 dBmV. Cisco RF reference: https://www.cisco.com/c/en/us/support/docs/broadband-cable/radio-frequency-rf-hybrid-fiber-coaxial-hfc/7137-rf.html'
+        tags:
+        - tag: component
+          value: signal
+      - uuid: df5923d41e0140bb96a2b99192b1c6d4
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds5.power,5m)<{$EPC3008.DS.POWER.CRIT.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds5.power,5m)>{$EPC3008.DS.POWER.CRIT.MAX}
+        name: 'Cisco EPC3008: Downstream channel 5 power outside DOCSIS range'
+        priority: HIGH
+        description: Downstream input power outside -15 to +15 dBmV per Cisco RF guidance https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: d848d26d7b3b49849cb03fa8898235ff
+      name: 'Downstream channel 5: SNR'
+      type: DEPENDENT
+      key: cisco.epc3008.ds5.snr
+      value_type: FLOAT
+      units: dB
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_5_snr
+      triggers:
+      - uuid: a6404a9471eb426c88802e0e86e933d2
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds5.snr,5m)<={$EPC3008.DS.SNR.CRIT} or (min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds5.power,5m)<={$EPC3008.DS.POWER.SNR.LOW} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds5.snr,5m)<={$EPC3008.DS.SNR.WARN})
+        name: 'Cisco EPC3008: Downstream channel 5 SNR critically low'
+        priority: HIGH
+        description: For 256-QAM Cisco guidance requires SNR >30 dB above -8 dBmV and >33 dB from -15 to -8 dBmV https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+      - uuid: 1fdd054e8ac1424ea40bc8813999c8a6
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds5.snr,5m)<={$EPC3008.DS.SNR.WARN} and min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds5.snr,5m)>{$EPC3008.DS.SNR.CRIT} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds5.power,5m)>{$EPC3008.DS.POWER.SNR.LOW}
+        name: 'Cisco EPC3008: Downstream channel 5 SNR low'
+        priority: WARNING
+        description: SNR below 33 dB warning level. Cisco cites >30 dB as the 256-QAM minimum above -8 dBmV and recommends
+          additional margin https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: 3262452c5ca14a4a8dc817b743271e3d
+      name: 'Downstream channel 6: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.ds6.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_6_power
+      triggers:
+      - uuid: 8b216bb9b0e84e9599e9d158a5f8c448
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds6.power,5m)<{$EPC3008.DS.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds6.power,5m)>{$EPC3008.DS.POWER.MAX}
+        name: 'Cisco EPC3008: Downstream channel 6 power outside warning range'
+        priority: WARNING
+        description: 'Zabbix warning threshold: downstream power outside -10 to +10 dBmV. Preferred target is -7 to +7 dBmV;
+          Cisco/DOCSIS operating range is -15 to +15 dBmV. Cisco RF reference: https://www.cisco.com/c/en/us/support/docs/broadband-cable/radio-frequency-rf-hybrid-fiber-coaxial-hfc/7137-rf.html'
+        tags:
+        - tag: component
+          value: signal
+      - uuid: d0df0952ebc641c38826415ed1bf8ca3
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds6.power,5m)<{$EPC3008.DS.POWER.CRIT.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds6.power,5m)>{$EPC3008.DS.POWER.CRIT.MAX}
+        name: 'Cisco EPC3008: Downstream channel 6 power outside DOCSIS range'
+        priority: HIGH
+        description: Downstream input power outside -15 to +15 dBmV per Cisco RF guidance https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: b09f86a244814f96bf74d1300ed2de4a
+      name: 'Downstream channel 6: SNR'
+      type: DEPENDENT
+      key: cisco.epc3008.ds6.snr
+      value_type: FLOAT
+      units: dB
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_6_snr
+      triggers:
+      - uuid: 026750bcb4cc450e86f6e666f7b8f21b
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds6.snr,5m)<={$EPC3008.DS.SNR.CRIT} or (min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds6.power,5m)<={$EPC3008.DS.POWER.SNR.LOW} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds6.snr,5m)<={$EPC3008.DS.SNR.WARN})
+        name: 'Cisco EPC3008: Downstream channel 6 SNR critically low'
+        priority: HIGH
+        description: For 256-QAM Cisco guidance requires SNR >30 dB above -8 dBmV and >33 dB from -15 to -8 dBmV https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+      - uuid: d7f518943e69406f8db01ce67a81fadd
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds6.snr,5m)<={$EPC3008.DS.SNR.WARN} and min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds6.snr,5m)>{$EPC3008.DS.SNR.CRIT} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds6.power,5m)>{$EPC3008.DS.POWER.SNR.LOW}
+        name: 'Cisco EPC3008: Downstream channel 6 SNR low'
+        priority: WARNING
+        description: SNR below 33 dB warning level. Cisco cites >30 dB as the 256-QAM minimum above -8 dBmV and recommends
+          additional margin https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: c393f5a9c2a54c10a4f1a0790fa77122
+      name: 'Downstream channel 7: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.ds7.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_7_power
+      triggers:
+      - uuid: f2c9f4bc33074b438d8ca0f122336f72
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds7.power,5m)<{$EPC3008.DS.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds7.power,5m)>{$EPC3008.DS.POWER.MAX}
+        name: 'Cisco EPC3008: Downstream channel 7 power outside warning range'
+        priority: WARNING
+        description: 'Zabbix warning threshold: downstream power outside -10 to +10 dBmV. Preferred target is -7 to +7 dBmV;
+          Cisco/DOCSIS operating range is -15 to +15 dBmV. Cisco RF reference: https://www.cisco.com/c/en/us/support/docs/broadband-cable/radio-frequency-rf-hybrid-fiber-coaxial-hfc/7137-rf.html'
+        tags:
+        - tag: component
+          value: signal
+      - uuid: e583073afdb74d0eaa90ac7a259b414a
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds7.power,5m)<{$EPC3008.DS.POWER.CRIT.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds7.power,5m)>{$EPC3008.DS.POWER.CRIT.MAX}
+        name: 'Cisco EPC3008: Downstream channel 7 power outside DOCSIS range'
+        priority: HIGH
+        description: Downstream input power outside -15 to +15 dBmV per Cisco RF guidance https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: 9b6398d641444650ab0163960f0399d0
+      name: 'Downstream channel 7: SNR'
+      type: DEPENDENT
+      key: cisco.epc3008.ds7.snr
+      value_type: FLOAT
+      units: dB
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_7_snr
+      triggers:
+      - uuid: cc7047d96b1d4ddc80fbdfbf3089d0c5
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds7.snr,5m)<={$EPC3008.DS.SNR.CRIT} or (min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds7.power,5m)<={$EPC3008.DS.POWER.SNR.LOW} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds7.snr,5m)<={$EPC3008.DS.SNR.WARN})
+        name: 'Cisco EPC3008: Downstream channel 7 SNR critically low'
+        priority: HIGH
+        description: For 256-QAM Cisco guidance requires SNR >30 dB above -8 dBmV and >33 dB from -15 to -8 dBmV https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+      - uuid: 79c9f803604845239615eb3841df8752
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds7.snr,5m)<={$EPC3008.DS.SNR.WARN} and min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds7.snr,5m)>{$EPC3008.DS.SNR.CRIT} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds7.power,5m)>{$EPC3008.DS.POWER.SNR.LOW}
+        name: 'Cisco EPC3008: Downstream channel 7 SNR low'
+        priority: WARNING
+        description: SNR below 33 dB warning level. Cisco cites >30 dB as the 256-QAM minimum above -8 dBmV and recommends
+          additional margin https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: a903b02cf6774b998e2d0ab2be375f47
+      name: 'Downstream channel 8: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.ds8.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_8_power
+      triggers:
+      - uuid: 1a49cd63a2434920b1c768310c29ee7c
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds8.power,5m)<{$EPC3008.DS.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds8.power,5m)>{$EPC3008.DS.POWER.MAX}
+        name: 'Cisco EPC3008: Downstream channel 8 power outside warning range'
+        priority: WARNING
+        description: 'Zabbix warning threshold: downstream power outside -10 to +10 dBmV. Preferred target is -7 to +7 dBmV;
+          Cisco/DOCSIS operating range is -15 to +15 dBmV. Cisco RF reference: https://www.cisco.com/c/en/us/support/docs/broadband-cable/radio-frequency-rf-hybrid-fiber-coaxial-hfc/7137-rf.html'
+        tags:
+        - tag: component
+          value: signal
+      - uuid: c708b3561f8849aba81f92bfce1fda11
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds8.power,5m)<{$EPC3008.DS.POWER.CRIT.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds8.power,5m)>{$EPC3008.DS.POWER.CRIT.MAX}
+        name: 'Cisco EPC3008: Downstream channel 8 power outside DOCSIS range'
+        priority: HIGH
+        description: Downstream input power outside -15 to +15 dBmV per Cisco RF guidance https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: a93ee369f89b4bfbaca7a4172c4fd959
+      name: 'Downstream channel 8: SNR'
+      type: DEPENDENT
+      key: cisco.epc3008.ds8.snr
+      value_type: FLOAT
+      units: dB
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.ds_8_snr
+      triggers:
+      - uuid: 4d491794e9544e69baffaab4286e7cc4
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds8.snr,5m)<={$EPC3008.DS.SNR.CRIT} or (min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds8.power,5m)<={$EPC3008.DS.POWER.SNR.LOW} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds8.snr,5m)<={$EPC3008.DS.SNR.WARN})
+        name: 'Cisco EPC3008: Downstream channel 8 SNR critically low'
+        priority: HIGH
+        description: For 256-QAM Cisco guidance requires SNR >30 dB above -8 dBmV and >33 dB from -15 to -8 dBmV https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+      - uuid: d00464b1864b463e88a61b395e6ff635
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds8.snr,5m)<={$EPC3008.DS.SNR.WARN} and min(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.ds8.snr,5m)>{$EPC3008.DS.SNR.CRIT} and min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.ds8.power,5m)>{$EPC3008.DS.POWER.SNR.LOW}
+        name: 'Cisco EPC3008: Downstream channel 8 SNR low'
+        priority: WARNING
+        description: SNR below 33 dB warning level. Cisco cites >30 dB as the 256-QAM minimum above -8 dBmV and recommends
+          additional margin https://www.cisco.com/c/dam/en/us/support/docs/broadband-cable/data-over-cable-service-interface-specifications-docsis/12199-initialization-pdf-wallchart.pdf
+        tags:
+        - tag: component
+          value: signal
+    - uuid: 3a770226f24d440aa7b2f7cf18317a00
+      name: 'Upstream channel 1: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.us1.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.us_1_power
+      triggers:
+      - uuid: 34a7e157b6e24e0eaa8c0572abe75735
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.us1.power,5m)<{$EPC3008.US.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.us1.power,5m)>{$EPC3008.US.POWER.MAX}
+        name: 'Cisco EPC3008: Upstream channel 1 transmit power outside recommended range'
+        priority: WARNING
+        description: 'Recommended upstream transmit power is 38 to 48 dBmV. Source: NETGEAR guidance https://kb.netgear.com/24311/Power-level-guidelines-for-a-NETGEAR-cable-modem-router'
+        tags:
+        - tag: component
+          value: signal
+    - uuid: 31cdcde409984737a3c4a11bc3c9b94e
+      name: 'Upstream channel 2: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.us2.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.us_2_power
+      triggers:
+      - uuid: 042f2429bfe94b73adb27e3e4f386440
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.us2.power,5m)<{$EPC3008.US.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.us2.power,5m)>{$EPC3008.US.POWER.MAX}
+        name: 'Cisco EPC3008: Upstream channel 2 transmit power outside recommended range'
+        priority: WARNING
+        description: 'Recommended upstream transmit power is 38 to 48 dBmV. Source: NETGEAR guidance https://kb.netgear.com/24311/Power-level-guidelines-for-a-NETGEAR-cable-modem-router'
+        tags:
+        - tag: component
+          value: signal
+    - uuid: 7dfc94b5d42a42e7b45fbef48890451c
+      name: 'Upstream channel 3: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.us3.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.us_3_power
+      triggers:
+      - uuid: 8928115e5d6b488fbdd746334d4f1251
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.us3.power,5m)<{$EPC3008.US.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.us3.power,5m)>{$EPC3008.US.POWER.MAX}
+        name: 'Cisco EPC3008: Upstream channel 3 transmit power outside recommended range'
+        priority: WARNING
+        description: 'Recommended upstream transmit power is 38 to 48 dBmV. Source: NETGEAR guidance https://kb.netgear.com/24311/Power-level-guidelines-for-a-NETGEAR-cable-modem-router'
+        tags:
+        - tag: component
+          value: signal
+    - uuid: cba1ae04c187497c8f40072412951493
+      name: 'Upstream channel 4: Power'
+      type: DEPENDENT
+      key: cisco.epc3008.us4.power
+      value_type: FLOAT
+      units: dBmV
+      master_item:
+        key: cisco.epc3008.html
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.us_4_power
+      triggers:
+      - uuid: 7b8f3def4c0a44caabaf2d22ba32dc1b
+        expression: min(/Template Cisco EPC3008 DOCSIS/cisco.epc3008.us4.power,5m)<{$EPC3008.US.POWER.MIN} or max(/Template
+          Cisco EPC3008 DOCSIS/cisco.epc3008.us4.power,5m)>{$EPC3008.US.POWER.MAX}
+        name: 'Cisco EPC3008: Upstream channel 4 transmit power outside recommended range'
+        priority: WARNING
+        description: 'Recommended upstream transmit power is 38 to 48 dBmV. Source: NETGEAR guidance https://kb.netgear.com/24311/Power-level-guidelines-for-a-NETGEAR-cable-modem-router'
+        tags:
+        - tag: component
+          value: signal
+    - uuid: c9e8b5e97b1148a2972c27564d42e88b
+      name: DS power warning low limit
+      type: CALCULATED
+      key: cisco.epc3008.threshold.ds.power.low
+      delay: 1m
+      history: 7d
+      trends: 365d
+      value_type: FLOAT
+      units: dBmV
+      params: '-10'
+      tags:
+      - tag: component
+        value: signal-threshold
+    - uuid: b85c39071ddc4082a22585f174589261
+      name: DS power warning high limit
+      type: CALCULATED
+      key: cisco.epc3008.threshold.ds.power.high
+      delay: 1m
+      history: 7d
+      trends: 365d
+      value_type: FLOAT
+      units: dBmV
+      params: '10'
+      tags:
+      - tag: component
+        value: signal-threshold
+    - uuid: 68eaac3b1c7b4182adb52787383f8150
+      name: DS SNR critical threshold
+      type: CALCULATED
+      key: cisco.epc3008.threshold.ds.snr.critical
+      delay: 1m
+      history: 7d
+      trends: 365d
+      value_type: FLOAT
+      units: dB
+      params: '30'
+      tags:
+      - tag: component
+        value: signal-threshold
+    - uuid: 02cc7c0dde974156827af2b4f116f246
+      name: DS SNR warning threshold
+      type: CALCULATED
+      key: cisco.epc3008.threshold.ds.snr.warning
+      delay: 1m
+      history: 7d
+      trends: 365d
+      value_type: FLOAT
+      units: dB
+      params: '33'
+      tags:
+      - tag: component
+        value: signal-threshold
+    - uuid: a57002eea23a4870ad941b63d0c775c2
+      name: US power low threshold
+      type: CALCULATED
+      key: cisco.epc3008.threshold.us.power.low
+      delay: 1m
+      history: 7d
+      trends: 365d
+      value_type: FLOAT
+      units: dBmV
+      params: '38'
+      tags:
+      - tag: component
+        value: signal-threshold
+    - uuid: 991fcaa5d9a0483b8b7207cde8a33840
+      name: US power high threshold
+      type: CALCULATED
+      key: cisco.epc3008.threshold.us.power.high
+      delay: 1m
+      history: 7d
+      trends: 365d
+      value_type: FLOAT
+      units: dBmV
+      params: '48'
+      tags:
+      - tag: component
+        value: signal-threshold
+    dashboards:
+    - uuid: 8a84ca6373bf40ffa0ce3ad9dd6e59a2
+      name: Cisco EPC3008 — przegląd sygnału
+      pages:
+      - name: Przegląd
+        widgets:
+        - type: item
+          name: Status modemu
+          x: '0'
+          y: '0'
+          width: '18'
+          height: '4'
+          fields:
+          - type: ITEM
+            name: itemid.0
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.operational
+          - type: INTEGER
+            name: show.0
+            value: '1'
+          - type: INTEGER
+            name: show.1
+            value: '2'
+          - type: STRING
+            name: reference
+            value: STAT1
+        - type: svggraph
+          name: Downstream — moc sygnału (dBmV)
+          x: '0'
+          y: '4'
+          width: '72'
+          height: '6'
+          fields:
+          - type: INTEGER
+            name: ds.0.dataset_type
+            value: '0'
+          - type: ITEM
+            name: ds.0.itemids.0
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds1.power
+          - type: STRING
+            name: ds.0.color.0
+            value: 1A7FC4
+          - type: ITEM
+            name: ds.0.itemids.1
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds2.power
+          - type: STRING
+            name: ds.0.color.1
+            value: E97659
+          - type: ITEM
+            name: ds.0.itemids.2
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds3.power
+          - type: STRING
+            name: ds.0.color.2
+            value: 5B9BD5
+          - type: ITEM
+            name: ds.0.itemids.3
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds4.power
+          - type: STRING
+            name: ds.0.color.3
+            value: 70AD47
+          - type: ITEM
+            name: ds.0.itemids.4
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds5.power
+          - type: STRING
+            name: ds.0.color.4
+            value: A56CC1
+          - type: ITEM
+            name: ds.0.itemids.5
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds6.power
+          - type: STRING
+            name: ds.0.color.5
+            value: EDC948
+          - type: ITEM
+            name: ds.0.itemids.6
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds7.power
+          - type: STRING
+            name: ds.0.color.6
+            value: 17BECF
+          - type: ITEM
+            name: ds.0.itemids.7
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds8.power
+          - type: STRING
+            name: ds.0.color.7
+            value: 8C564B
+          - type: STRING
+            name: reference
+            value: DSPOW
+          - type: INTEGER
+            name: ds.0.type
+            value: '0'
+          - type: INTEGER
+            name: ds.0.width
+            value: '2'
+          - type: INTEGER
+            name: ds.0.fill
+            value: '0'
+          - type: INTEGER
+            name: ds.1.dataset_type
+            value: '0'
+          - type: INTEGER
+            name: ds.1.type
+            value: '0'
+          - type: INTEGER
+            name: ds.1.width
+            value: '1'
+          - type: INTEGER
+            name: ds.1.fill
+            value: '0'
+          - type: ITEM
+            name: ds.1.itemids.0
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.threshold.ds.power.low
+          - type: STRING
+            name: ds.1.color.0
+            value: F0A202
+          - type: ITEM
+            name: ds.1.itemids.1
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.threshold.ds.power.high
+          - type: STRING
+            name: ds.1.color.1
+            value: F0A202
+        - type: svggraph
+          name: Downstream — SNR (dB)
+          x: '0'
+          y: '10'
+          width: '72'
+          height: '6'
+          fields:
+          - type: INTEGER
+            name: ds.0.dataset_type
+            value: '0'
+          - type: ITEM
+            name: ds.0.itemids.0
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds1.snr
+          - type: STRING
+            name: ds.0.color.0
+            value: 1A7FC4
+          - type: ITEM
+            name: ds.0.itemids.1
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds2.snr
+          - type: STRING
+            name: ds.0.color.1
+            value: E97659
+          - type: ITEM
+            name: ds.0.itemids.2
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds3.snr
+          - type: STRING
+            name: ds.0.color.2
+            value: 5B9BD5
+          - type: ITEM
+            name: ds.0.itemids.3
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds4.snr
+          - type: STRING
+            name: ds.0.color.3
+            value: 70AD47
+          - type: ITEM
+            name: ds.0.itemids.4
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds5.snr
+          - type: STRING
+            name: ds.0.color.4
+            value: A56CC1
+          - type: ITEM
+            name: ds.0.itemids.5
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds6.snr
+          - type: STRING
+            name: ds.0.color.5
+            value: EDC948
+          - type: ITEM
+            name: ds.0.itemids.6
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds7.snr
+          - type: STRING
+            name: ds.0.color.6
+            value: 17BECF
+          - type: ITEM
+            name: ds.0.itemids.7
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.ds8.snr
+          - type: STRING
+            name: ds.0.color.7
+            value: 8C564B
+          - type: STRING
+            name: reference
+            value: DSSNR
+          - type: INTEGER
+            name: ds.0.type
+            value: '0'
+          - type: INTEGER
+            name: ds.0.width
+            value: '2'
+          - type: INTEGER
+            name: ds.0.fill
+            value: '0'
+          - type: INTEGER
+            name: ds.1.dataset_type
+            value: '0'
+          - type: INTEGER
+            name: ds.1.type
+            value: '0'
+          - type: INTEGER
+            name: ds.1.width
+            value: '1'
+          - type: INTEGER
+            name: ds.1.fill
+            value: '0'
+          - type: ITEM
+            name: ds.1.itemids.0
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.threshold.ds.snr.critical
+          - type: STRING
+            name: ds.1.color.0
+            value: E53935
+          - type: ITEM
+            name: ds.1.itemids.1
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.threshold.ds.snr.warning
+          - type: STRING
+            name: ds.1.color.1
+            value: F0A202
+        - type: svggraph
+          name: Upstream — moc nadawania (dBmV)
+          x: '0'
+          y: '16'
+          width: '72'
+          height: '6'
+          fields:
+          - type: INTEGER
+            name: ds.0.dataset_type
+            value: '0'
+          - type: ITEM
+            name: ds.0.itemids.0
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.us1.power
+          - type: STRING
+            name: ds.0.color.0
+            value: 1A7FC4
+          - type: ITEM
+            name: ds.0.itemids.1
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.us2.power
+          - type: STRING
+            name: ds.0.color.1
+            value: E97659
+          - type: ITEM
+            name: ds.0.itemids.2
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.us3.power
+          - type: STRING
+            name: ds.0.color.2
+            value: 5B9BD5
+          - type: ITEM
+            name: ds.0.itemids.3
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.us4.power
+          - type: STRING
+            name: ds.0.color.3
+            value: 70AD47
+          - type: STRING
+            name: reference
+            value: USTXP
+          - type: INTEGER
+            name: ds.0.type
+            value: '0'
+          - type: INTEGER
+            name: ds.0.width
+            value: '2'
+          - type: INTEGER
+            name: ds.0.fill
+            value: '0'
+          - type: INTEGER
+            name: ds.1.dataset_type
+            value: '0'
+          - type: INTEGER
+            name: ds.1.type
+            value: '0'
+          - type: INTEGER
+            name: ds.1.width
+            value: '1'
+          - type: INTEGER
+            name: ds.1.fill
+            value: '0'
+          - type: ITEM
+            name: ds.1.itemids.0
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.threshold.us.power.low
+          - type: STRING
+            name: ds.1.color.0
+            value: F0A202
+          - type: ITEM
+            name: ds.1.itemids.1
+            value:
+              host: Template Cisco EPC3008 DOCSIS
+              key: cisco.epc3008.threshold.us.power.high
+          - type: STRING
+            name: ds.1.color.1
+            value: F0A202
+        - type: problems
+          name: Problemy sygnału
+          x: '0'
+          y: '22'
+          width: '72'
+          height: '6'
+          fields: []

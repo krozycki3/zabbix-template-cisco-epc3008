@@ -1,0 +1,10 @@
+# Local backups and captured modem pages
+*.before-signal-triggers
+*.pre-fix
+*_org
+epc3008.html
+
+# Editor and Python artifacts
+.*.swp
+__pycache__/
+*.py[cod]
