@@ -14,6 +14,9 @@ zabbix_export:
     - macro: '{$EPC3008.URL}'
       value: http://192.168.100.1/Docsis_system.asp
       description: Modem status page URL
+    - macro: '{$EPC3008.INTERVAL}'
+      value: 1m
+      description: Modem polling interval; controls how often the status page is downloaded.
     - macro: '{$EPC3008.DS.SNR.WARN}'
       value: '33'
       description: Cisco guidance for 256-QAM below -8 dBmV requires SNR above 33 dB.
@@ -46,7 +49,7 @@ zabbix_export:
       name: 'Cisco EPC3008: Download HTML'
       type: HTTP_AGENT
       key: cisco.epc3008.html
-      delay: 1m
+      delay: '{$EPC3008.INTERVAL}'
       history: 1d
       value_type: TEXT
       url: '{$EPC3008.URL}'
