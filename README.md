@@ -1,28 +1,32 @@
-# Cisco EPC3008 — template Zabbix 7.4
+# Cisco EPC3008 Zabbix 7.4 Template
 
-Szablon monitoruje modem kablowy Cisco EPC3008 przez stronę statusu DOCSIS.
+This template monitors a Cisco EPC3008 cable modem through its DOCSIS status page.
 
-## Monitorowane parametry
+## Monitored metrics
 
-- Moc downstream i SNR dla 8 kanałów.
-- Moc nadawania upstream dla 4 kanałów.
-- Stan pracy modemu i etapy rejestracji DOCSIS.
-- Pulpit hosta z wykresami liniowymi oraz poziomami granicznymi.
+- Downstream power and SNR for up to 8 channels.
+- Upstream transmit power for up to 4 channels.
+- Modem operational status and DOCSIS registration stages.
+- A host dashboard with line charts and signal threshold lines.
 
-## Progi
+## Thresholds
 
-- Moc downstream: ostrzeżenie poniżej −10 lub powyżej +10 dBmV; alarm krytyczny poza −15…+15 dBmV.
-- SNR downstream: progi 33 dB (ostrzeżenie) i 30 dB (krytyczny), z warunkiem uwzględniającym moc kanału.
-- Moc upstream: ostrzeżenie poza 38…48 dBmV.
+- Downstream power: warning below -10 or above +10 dBmV; critical outside -15 to +15 dBmV.
+- Downstream SNR: warning at 33 dB and critical at 30 dB, with conditions that account for channel power.
+- Upstream transmit power: warning outside 38 to 48 dBmV.
 
-Progi można dostosować makrami szablonu.
+Thresholds can be adjusted with template macros.
 
-## Instalacja
+## Polling interval
 
-W Zabbix 7.4 wybierz **Zbieranie danych → Szablony → Import**, wskaż plik YAML i zaktualizuj istniejący szablon. Następnie połącz template `Template Cisco EPC3008 DOCSIS` z hostem modemu.
+The status page is downloaded every 1 minute by default. Change the `{$EPC3008.INTERVAL}` macro on the template or host to use a different interval, for example `30s`. Dependent items are updated whenever the status page is downloaded.
 
-Domyślne makro `{$EPC3008.URL}` wskazuje `http://192.168.100.1/Docsis_system.asp`; zmień je, jeśli modem jest dostępny pod innym adresem.
+## Installation
 
-## Pliki
+In Zabbix 7.4, go to **Data collection → Templates → Import**, select the YAML file, and update the existing template. Then link `Template Cisco EPC3008 DOCSIS` to the modem host.
 
-- `Template_Cisco_EPC3008_Zabbix_7.4_with_dashboard.yaml` — plik importu dla Zabbix 7.4.
+The default `{$EPC3008.URL}` macro points to `http://192.168.100.1/Docsis_system.asp`. Change it if the modem uses a different address.
+
+## Files
+
+- `Template_Cisco_EPC3008_Zabbix_7.4_with_dashboard.yaml` — import file for Zabbix 7.4, including the dashboard.
